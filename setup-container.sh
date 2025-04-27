@@ -34,9 +34,9 @@ EOF
         # Apply sysctl params without reboot
         sudo sysctl --system
 
-        # Install containerd using the official package
+        # Install containerd directly from Ubuntu repos
         sudo apt update
-        sudo apt install -y containerd.io
+        sudo apt install -y containerd
 
         # Configure containerd
         sudo mkdir -p /etc/containerd
@@ -48,20 +48,13 @@ EOF
         # Restart containerd to apply changes
         sudo systemctl restart containerd
 
-RUNC_VERSION=$(curl -s https://api.github.com/repos/opencontainers/runc/releases/latest | jq -r '.tag_name')
+# We don't need to install runc separately, it's already included with containerd
+# And we don't need to download the service file as it's included in the package
 
-wget https://github.com/opencontainers/runc/releases/download/${RUNC_VERSION}/runc.${PLATFORM}
-sudo install -m 755 runc.${PLATFORM} /usr/local/sbin/runc
-# Restart containerd
-        wget https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
-        sudo mv containerd.service /usr/lib/systemd/system/
-        sudo systemctl daemon-reload
-        sudo systemctl enable --now containerd
 fi
 
-sudo ln -s /etc/apparmor.d/runc /etc/apparmor.d/disable/
-sudo apparmor_parser -R /etc/apparmor.d/runc
-
+sudo ln -s /etc/apparmor.d/runc /etc/apparmor.d/disable/ 2>/dev/null || true
+sudo apparmor_parser -R /etc/apparmor.d/runc 2>/dev/null || true
 
 touch /tmp/container.txt
 exit
