@@ -34,26 +34,19 @@ EOF
         # Apply sysctl params without reboot
         sudo sysctl --system
 
-        # (Install containerd)
-	# getting rid of hard coded version numbers
-	CONTAINERD_VERSION=$(curl -s https://api.github.com/repos/containerd/containerd/releases/latest | jq -r '.tag_name')
-	CONTAINERD_VERSION=${CONTAINERD_VERSION#v}
-        wget https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}-linux-${PLATFORM}.tar.gz
-        sudo tar xvf containerd-${CONTAINERD_VERSION}-linux-${PLATFORM}.tar.gz -C /usr/local
+        # Install containerd using the official package
+        sudo apt update
+        sudo apt install -y containerd.io
+
         # Configure containerd
         sudo mkdir -p /etc/containerd
-        cat <<- TOML | sudo tee /etc/containerd/config.toml
-version = 2
-[plugins]
-  [plugins."io.containerd.grpc.v1.cri"]
-    [plugins."io.containerd.grpc.v1.cri".containerd]
-      discard_unpacked_layers = true
-      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
-        [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
-          runtime_type = "io.containerd.runc.v2"
-          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-            SystemdCgroup = true
-TOML
+        sudo containerd config default | sudo tee /etc/containerd/config.toml
+
+        # Enable systemd cgroup driver
+        sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+
+        # Restart containerd to apply changes
+        sudo systemctl restart containerd
 
 RUNC_VERSION=$(curl -s https://api.github.com/repos/opencontainers/runc/releases/latest | jq -r '.tag_name')
 
