@@ -2,6 +2,8 @@
 # script that runs 
 # https://kubernetes.io/docs/setup/production-environment/container-runtime
 
+set -e
+
 # changes March 14 2023: introduced $PLATFORM to have this work on amd64 as well as arm64
 
 # setting MYOS variable
@@ -42,19 +44,40 @@ EOF
         sudo mkdir -p /etc/containerd
         sudo containerd config default | sudo tee /etc/containerd/config.toml
 
-        # Enable systemd cgroup driver
+        # Enable systemd cgroup driver - using more precise replacement
         sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
-
+        
+        # Verify the change was applied
+        if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
+            echo "Failed to set SystemdCgroup = true, manually editing the file"
+            # Attempt a different approach if the first sed failed
+            sudo sed -i '/\[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options\]/,/\[/ s/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+            
+            if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
+                echo "ERROR: Could not set SystemdCgroup = true. Please check the containerd config manually."
+                exit 1
+            fi
+        fi
+        
         # Restart containerd to apply changes
         sudo systemctl restart containerd
+        sudo systemctl enable containerd
 
-# We don't need to install runc separately, it's already included with containerd
-# And we don't need to download the service file as it's included in the package
-
+        # Verify containerd is running
+        if ! systemctl is-active --quiet containerd; then
+            echo "ERROR: containerd is not running. Check service status with: systemctl status containerd"
+            exit 1
+        fi
+        
+        echo "✅ containerd installed and configured successfully with systemd cgroup driver"
 fi
 
-sudo ln -s /etc/apparmor.d/runc /etc/apparmor.d/disable/ 2>/dev/null || true
-sudo apparmor_parser -R /etc/apparmor.d/runc 2>/dev/null || true
+# Disable AppArmor for runc if it exists
+if [ -f /etc/apparmor.d/runc ]; then
+    sudo ln -s /etc/apparmor.d/runc /etc/apparmor.d/disable/ 2>/dev/null || true
+    sudo apparmor_parser -R /etc/apparmor.d/runc 2>/dev/null || true
+fi
 
 touch /tmp/container.txt
-exit
+echo "container runtime setup complete"
+exit 0
