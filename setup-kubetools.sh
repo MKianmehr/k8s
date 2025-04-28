@@ -25,6 +25,10 @@ OSVERSION=$(hostnamectl | awk '/Operating/ { print $4 }')
 KUBEVERSION=$(curl -s https://api.github.com/repos/kubernetes/kubernetes/releases/latest | jq -r '.tag_name')
 KUBEVERSION=${KUBEVERSION%.*}
 
+# detecting latest Cilium version
+CILIUM_VERSION=$(curl -s https://api.github.com/repos/cilium/cilium/releases/latest | jq -r '.tag_name')
+CILIUM_VERSION=${CILIUM_VERSION#v}
+
 
 if [ $MYOS = "Ubuntu" ]
 then
@@ -44,6 +48,10 @@ sleep 2
 	sudo swapoff -a
 	
 	sudo sed -i 's/\/swap/#\/swap/' /etc/fstab
+
+	# Install Helm
+	echo "Installing Helm..."
+	sudo snap install helm --classic
 fi
 
 # Set iptables bridging
@@ -56,3 +64,6 @@ fi
 sudo crictl config --set \
     runtime-endpoint=unix:///run/containerd/containerd.sock
 echo 'after initializing the control node, follow instructions and use kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml to install the calico plugin (control node only). On the worker nodes, use sudo kubeadm join ... to join'
+echo 'Alternatively, you can install Cilium using Helm:'
+echo 'helm repo add cilium https://helm.cilium.io/'
+echo "helm install cilium cilium/cilium --version ${CILIUM_VERSION} --namespace kube-system --set kubeProxyReplacement=strict --set k8sServiceHost=API_SERVER_IP --set k8sServicePort=6443"

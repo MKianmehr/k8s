@@ -69,7 +69,7 @@ Once both scripts succeed, proceed to initialize and join the cluster:
 1. **Initialize control-plane node** (on master):
 
    ```bash
-   sudo kubeadm init --pod-network-cidr=<YOUR_POD_CIDR>
+   sudo kubeadm init
    ```
 
 2. **Configure kubectl for your user**:
@@ -80,13 +80,36 @@ Once both scripts succeed, proceed to initialize and join the cluster:
    sudo chown $(id -u):$(id -g) $HOME/.kube/config
    ```
 
-3. **Install a Pod network add-on** (e.g., Calico):
+3. **Check kube-system pods**:
+
+   ```bash
+   kubectl get pods -n kube-system
+   ```
+
+   We will see sth like:
+
+   ```bash
+   ubuntu@master1:~$ kubectl get pods -n kube-system
+    NAME                              READY   STATUS    RESTARTS   AGE
+    coredns-674b8bbfcf-bz48n          0/1     Pending   0          22m
+    coredns-674b8bbfcf-s8trm          0/1     Pending   0          22m
+    etcd-master1                      1/1     Running   0          22m
+    kube-apiserver-master1            1/1     Running   0          22m
+    kube-controller-manager-master1   1/1     Running   0          22m
+    kube-proxy-cn9lm                  1/1     Running   0          22m
+    kube-scheduler-master1            1/1     Running   0          22m
+    ubuntu@master1:~$
+   ```
+
+   which says coredns is in pending state
+
+4. **Install a Pod network add-on** (e.g., Calico):
 
    ```bash
    kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
    ```
 
-4. **Join workers** (on each worker node):
+5. **Join workers** (on each worker node):
 
    ```bash
    sudo kubeadm join <MASTER_IP>:<PORT> \
