@@ -40,32 +40,17 @@ EOF
         sudo apt update
         sudo apt install -y containerd
 
-        # Configure containerd
+        # Configure containerd with systemd cgroup driver enabled
         sudo mkdir -p /etc/containerd
-        sudo containerd config default | sudo tee /etc/containerd/config.toml
-
-        # Use a more robust method to change SystemdCgroup to true
-        sudo bash -c 'cat > /etc/containerd/config.toml.updated << EOF
-$(cat /etc/containerd/config.toml | sed "s/SystemdCgroup = false/SystemdCgroup = true/g")
-EOF'
-        sudo mv /etc/containerd/config.toml.updated /etc/containerd/config.toml
-        
-        # Verify the change was applied
-        if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
-            echo "ERROR: Failed to set SystemdCgroup = true. Trying alternative approach..."
-            
-            # Alternative approach - use specific configuration
-            cat <<- TOML | sudo tee /etc/containerd/config.toml
+        cat <<- TOML | sudo tee /etc/containerd/config.toml
 version = 2
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-  SystemdCgroup = true
+[plugins."io.containerd.grpc.v1.cri"]
+  systemd_cgroup = true
+  [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+    runtime_type = "io.containerd.runc.v2"
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+      SystemdCgroup = true
 TOML
-            
-            if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
-                echo "CRITICAL ERROR: Could not configure SystemdCgroup = true"
-                exit 1
-            fi
-        fi
         
         # Restart containerd to apply changes
         sudo systemctl restart containerd
@@ -74,6 +59,12 @@ TOML
         # Verify containerd is running
         if ! systemctl is-active --quiet containerd; then
             echo "ERROR: containerd is not running. Check service status with: systemctl status containerd"
+            exit 1
+        fi
+        
+        # Verify the configuration
+        if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
+            echo "ERROR: Failed to set SystemdCgroup = true"
             exit 1
         fi
         
