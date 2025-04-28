@@ -1,48 +1,90 @@
 #!/bin/bash
-# script that runs 
-# https://kubernetes.io/docs/setup/production-environment/container-runtime
+# Kubernetes Container Runtime Setup Script
+# Author: System Administrator
+# Version: 1.0
+# License: MIT
+# Description: Sets up containerd as the container runtime for Kubernetes
+# Usage: sudo ./setup-container.sh
 
-set -e
+set -euo pipefail
 
-# changes March 14 2023: introduced $PLATFORM to have this work on amd64 as well as arm64
+# Logging function
+log() {
+    local level=$1
+    local message=$2
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[${timestamp}] [${level}] ${message}"
+}
 
-# setting MYOS variable
-MYOS=$(hostnamectl | awk '/Operating/ { print $3 }')
-OSVERSION=$(hostnamectl | awk '/Operating/ { print $4 }')
-# beta: building in ARM support
-[ $(arch) = aarch64 ] && PLATFORM=arm64
-[ $(arch) = x86_64 ] && PLATFORM=amd64
+# Error handling function
+handle_error() {
+    local exit_code=$1
+    local error_message=$2
+    log "ERROR" "${error_message}"
+    exit ${exit_code}
+}
 
-sudo apt install -y jq
+# Check if running as root
+if [ "$(id -u)" -ne 0 ]; then
+    handle_error 1 "This script must be run as root. Please use sudo."
+fi
 
-if [ $MYOS = "Ubuntu" ]
-then
-	### setting up container runtime prereq
-	cat <<- EOF | sudo tee /etc/modules-load.d/containerd.conf
-	overlay
-	br_netfilter
+# Detect platform and OS
+log "INFO" "Detecting system information..."
+MYOS=$(hostnamectl | awk '/Operating/ { print $3 }') || handle_error 2 "Failed to detect OS"
+OSVERSION=$(hostnamectl | awk '/Operating/ { print $4 }') || handle_error 2 "Failed to detect OS version"
+
+# Detect architecture
+case $(arch) in
+    aarch64) PLATFORM=arm64 ;;
+    x86_64)  PLATFORM=amd64 ;;
+    *)       handle_error 3 "Unsupported architecture: $(arch)" ;;
+esac
+
+log "INFO" "Detected: OS=${MYOS}, Version=${OSVERSION}, Platform=${PLATFORM}"
+
+# Install required tools
+log "INFO" "Installing required tools..."
+if ! sudo apt install -y jq; then
+    handle_error 4 "Failed to install jq"
+fi
+
+if [ "$MYOS" = "Ubuntu" ]; then
+    log "INFO" "Setting up container runtime prerequisites..."
+    
+    # Configure kernel modules
+    log "INFO" "Configuring kernel modules..."
+    cat <<- EOF | sudo tee /etc/modules-load.d/containerd.conf > /dev/null || handle_error 5 "Failed to create modules config"
+    overlay
+    br_netfilter
 EOF
 
-	sudo modprobe overlay
-	sudo modprobe br_netfilter
+    if ! sudo modprobe overlay || ! sudo modprobe br_netfilter; then
+        handle_error 6 "Failed to load required kernel modules"
+    fi
 
-        # Setup required sysctl params, these persist across reboots.
-        cat <<- EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
-        net.bridge.bridge-nf-call-iptables  = 1
-        net.ipv4.ip_forward                 = 1
-        net.bridge.bridge-nf-call-ip6tables = 1
+    # Configure sysctl parameters
+    log "INFO" "Configuring system parameters..."
+    cat <<- EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf > /dev/null || handle_error 7 "Failed to create sysctl config"
+    net.bridge.bridge-nf-call-iptables  = 1
+    net.ipv4.ip_forward                 = 1
+    net.bridge.bridge-nf-call-ip6tables = 1
 EOF
 
-        # Apply sysctl params without reboot
-        sudo sysctl --system
+    if ! sudo sysctl --system; then
+        handle_error 8 "Failed to apply sysctl parameters"
+    fi
 
-        # Install containerd directly from Ubuntu repos
-        sudo apt update
-        sudo apt install -y containerd
+    # Install containerd
+    log "INFO" "Installing containerd..."
+    if ! sudo apt update || ! sudo apt install -y containerd; then
+        handle_error 9 "Failed to install containerd"
+    fi
 
-        # Configure containerd with systemd cgroup driver enabled
-        sudo mkdir -p /etc/containerd
-        cat <<- TOML | sudo tee /etc/containerd/config.toml
+    # Configure containerd
+    log "INFO" "Configuring containerd..."
+    sudo mkdir -p /etc/containerd
+    cat <<- TOML | sudo tee /etc/containerd/config.toml > /dev/null || handle_error 10 "Failed to create containerd config"
 version = 2
 [plugins."io.containerd.grpc.v1.cri"]
   systemd_cgroup = true
@@ -51,32 +93,36 @@ version = 2
     [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
       SystemdCgroup = true
 TOML
-        
-        # Restart containerd to apply changes
-        sudo systemctl restart containerd
-        sudo systemctl enable containerd
 
-        # Verify containerd is running
-        if ! systemctl is-active --quiet containerd; then
-            echo "ERROR: containerd is not running. Check service status with: systemctl status containerd"
-            exit 1
-        fi
-        
-        # Verify the configuration
-        if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
-            echo "ERROR: Failed to set SystemdCgroup = true"
-            exit 1
-        fi
-        
-        echo "✅ containerd installed and configured successfully with systemd cgroup driver"
+    # Restart and enable containerd
+    log "INFO" "Starting containerd service..."
+    if ! sudo systemctl restart containerd || ! sudo systemctl enable containerd; then
+        handle_error 11 "Failed to start containerd service"
+    fi
+
+    # Verify containerd is running
+    if ! systemctl is-active --quiet containerd; then
+        handle_error 12 "containerd is not running. Check service status with: systemctl status containerd"
+    fi
+
+    # Verify configuration
+    if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
+        handle_error 13 "Failed to verify containerd configuration"
+    fi
+
+    log "INFO" "✅ containerd installed and configured successfully with systemd cgroup driver"
+else
+    handle_error 14 "Unsupported operating system: ${MYOS}"
 fi
 
 # Disable AppArmor for runc if it exists
 if [ -f /etc/apparmor.d/runc ]; then
+    log "INFO" "Disabling AppArmor for runc..."
     sudo ln -s /etc/apparmor.d/runc /etc/apparmor.d/disable/ 2>/dev/null || true
     sudo apparmor_parser -R /etc/apparmor.d/runc 2>/dev/null || true
 fi
 
-touch /tmp/container.txt
-echo "container runtime setup complete"
+# Create completion marker
+touch /tmp/container.txt || handle_error 15 "Failed to create completion marker"
+log "INFO" "Container runtime setup complete"
 exit 0
