@@ -31,7 +31,8 @@ sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-relea
 sudo curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
 	| sudo gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
 
-echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" \
+# Use the correct distribution name for Ubuntu 24.04
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-noble main" \
 	| sudo tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
 
 # Determine Kubernetes version to install (default: latest)
