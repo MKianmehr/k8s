@@ -44,17 +44,25 @@ EOF
         sudo mkdir -p /etc/containerd
         sudo containerd config default | sudo tee /etc/containerd/config.toml
 
-        # Enable systemd cgroup driver - using more precise replacement
-        sudo sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+        # Use a more robust method to change SystemdCgroup to true
+        sudo bash -c 'cat > /etc/containerd/config.toml.updated << EOF
+$(cat /etc/containerd/config.toml | sed "s/SystemdCgroup = false/SystemdCgroup = true/g")
+EOF'
+        sudo mv /etc/containerd/config.toml.updated /etc/containerd/config.toml
         
         # Verify the change was applied
         if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
-            echo "Failed to set SystemdCgroup = true, manually editing the file"
-            # Attempt a different approach if the first sed failed
-            sudo sed -i '/\[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options\]/,/\[/ s/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+            echo "ERROR: Failed to set SystemdCgroup = true. Trying alternative approach..."
+            
+            # Alternative approach - use specific configuration
+            cat <<- TOML | sudo tee /etc/containerd/config.toml
+version = 2
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+  SystemdCgroup = true
+TOML
             
             if ! grep -q "SystemdCgroup = true" /etc/containerd/config.toml; then
-                echo "ERROR: Could not set SystemdCgroup = true. Please check the containerd config manually."
+                echo "CRITICAL ERROR: Could not configure SystemdCgroup = true"
                 exit 1
             fi
         fi
