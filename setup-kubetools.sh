@@ -26,40 +26,35 @@ sudo modprobe br_netfilter
 
 # Add Kubernetes APT repository and key
 sudo apt-get update
-sudo apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+sudo apt-get install -y apt-transport-https curl
 
-sudo curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-	| sudo gpg --dearmor -o /usr/share/keyrings/kubernetes-archive-keyring.gpg
+# Get the latest Kubernetes version
+KUBEVERSION=$(curl -s https://api.github.com/repos/kubernetes/kubernetes/releases/latest | jq -r '.tag_name')
+KUBEVERSION=${KUBEVERSION%.*}
 
-# Use the correct distribution name for Ubuntu 24.04
-echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-noble main" \
-	| sudo tee /etc/apt/sources.list.d/kubernetes.list > /dev/null
+# Add Kubernetes repository using the new format
+curl -fsSL https://pkgs.k8s.io/core:/stable:/${KUBEVERSION}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/${KUBEVERSION}/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
 
-# Determine Kubernetes version to install (default: latest)
-KUBE_VERSION="${KUBE_VERSION:-$(curl -s https://api.github.com/repos/kubernetes/kubernetes/releases/latest | jq -r '.tag_name' | sed 's/^v//')}"
+echo "Installing Kubernetes components version $KUBEVERSION"
 
-echo "Installing Kubernetes components version $KUBE_VERSION"
-
-# Install kubelet, kubeadm, kubectl with explicit version pin
+# Install kubelet, kubeadm, kubectl
 sudo apt-get update
-sudo apt-get install -y \
-	kubelet="${KUBE_VERSION}-00" \
-	kubeadm="${KUBE_VERSION}-00" \
-	kubectl="${KUBE_VERSION}-00"
+sudo apt-get install -y kubelet kubeadm kubectl
 
 # Prevent automatic updates of Kubernetes components
 sudo apt-mark hold kubelet kubeadm kubectl
 
 # Disable swap (required by kubelet)
 sudo swapoff -a
-sudo sed -i '/ swap / s/^/#/' /etc/fstab
+sudo sed -i 's/\/swap/#\/swap/' /etc/fstab
 
 # Configure crictl to talk to containerd
 sudo crictl config --set runtime-endpoint=unix:///run/containerd/containerd.sock
 
 # Summary and next steps
 echo -e "
-Kubernetes tools installed successfully (version $KUBE_VERSION).
+Kubernetes tools installed successfully (version $KUBEVERSION).
 
 Next steps:
   1. Initialize the control plane:
