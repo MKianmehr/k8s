@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
 # Professional kubeadm installation script for Ubuntu 20.04+ following Kubernetes upstream docs
 
 # Ensure container runtime setup has completed
-if [[ ! -f /tmp/container.txt ]]; then
+if [ ! -f /tmp/container.txt ]; then
 	echo "ERROR: Container runtime not configured. Please run ./setup-container.sh first." >&2
 	exit 1
 fi
 
 # Verify OS compatibility
-. /etc/os-release
-if [[ "$ID" != "ubuntu" ]]; then
-	echo "ERROR: Unsupported OS '$ID'. This script supports Ubuntu only." >&2
+if [ -f /etc/os-release ]; then
+	. /etc/os-release
+	if [ "$ID" != "ubuntu" ]; then
+		echo "ERROR: Unsupported OS '$ID'. This script supports Ubuntu only." >&2
+		exit 1
+	fi
+else
+	echo "ERROR: Could not determine OS type. /etc/os-release not found." >&2
 	exit 1
 fi
 
